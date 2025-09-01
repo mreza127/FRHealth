@@ -92,14 +92,19 @@ endmodule
 
 //// //// //// ////
 
-module FreqDiv(input Clk, output ClkFsm, output Clk7seg, output ClkDeb, output ClkLcd, output beep500, output beep1k, output Beep2k);
+module FreqDiv(Clk, ClkFsm, Clk7seg, ClkDeb, ClkLcd, beep500, beep1k, beep2k);
 
-    reg [22:0] cntDeb = 0;
+    input Clk;
+	 output reg ClkFsm, Clk7seg, ClkDeb, ClkLcd, beep500, beep1k, beep2k;
+	 
+	 
+	 
+	 reg [22:0] cntDeb = 0;
     reg [25:0] cntFsm = 0;
-    reg [15:0] cnt7seg = 0, cntLcd = 0, cnt500 = 0, cnt1k = 0, cnt2k = 0;
+    reg [31:0] cnt7seg = 0, cntLcd = 0, cnt500 = 0, cnt1k = 0, cnt2k = 0;
 
     always @(posedge Clk) begin
-        cntFsm <= cnt1Hz + 1;
+        cntFsm <= cntFsm + 1;
         if (cntFsm == 20_000_000) begin
             ClkFsm <= ~ClkFsm;
             cntFsm <= 0;
@@ -112,13 +117,13 @@ module FreqDiv(input Clk, output ClkFsm, output Clk7seg, output ClkDeb, output C
         end
 
         cntDeb <= cntDeb + 1;
-        if (cntDeb == 400_000) begin
+        if (cntDeb == 40_000) begin
             ClkDeb <= ~ClkDeb;
             cntDeb <= 0;
         end
 
         cntLcd <= cntLcd + 1;
-        if (cntLcd == 20_000) begin
+        if (cntLcd == 25_000) begin
             ClkLcd <= ~ClkLcd;
             cntLcd <= 0;
         end
@@ -146,8 +151,10 @@ endmodule
 
 //// //// //// ////
 
-module DFF(input Clk, input D, output Q);
-    reg Q;
+module DFF(Clk, D, Q);
+    input Clk, D;
+	 output Q;
+	 reg Q;
     always @(posedge Clk)
         Q <= D;
 endmodule
@@ -163,10 +170,10 @@ endmodule
 
 //// //// //// ////
 
-module FSM(Clk, w, cal, g, met, St, Re, Sk, Bu, Cn, Ti, WCn);
+module FSM(Clk, FClk, w, cal, g, met, St, Re, Sk, Bu, Cn, Ti, WCn);
     input [2:0] w;
     input [1:0] cal, met;
-    input Clk, g, St, Re, Sk;
+    input Clk, FClk, g, St, Re, Sk;
     output reg [1:0] Bu;
     output reg [8:0] Cn;
     output reg [5:0] Ti;
@@ -182,15 +189,24 @@ module FSM(Clk, w, cal, g, met, St, Re, Sk, Bu, Cn, Ti, WCn);
     reg [8:0] nexCn;
     reg [5:0] nexTi;
     reg [3:0] nexWCn;
+	 
+	 reg sync0, sync1, tick;
+	 
+	 always @(posedge FClk) begin 
+		  sync0 <= Clk;
+		  sync1 <= sync0;
+		  
+		  tick <= sync0 & ~sync1;
+	 end
 
-    always @(posedge Clk or posedge Re) begin
+    always @(posedge FClk or posedge Re) begin
         if (Re) begin
             Bu <= 2'b00;
             Cn <= T;
             Ti <= 6'd0;
-            WCn <= 3'd0;
+            WCn <= 4'd10;
             cur <= Start;
-        end else begin
+        end else if ((St && cur == Start) || Sk || tick) begin
             Bu <= nexBu;
             Cn <= nexCn;
             Ti <= nexTi;
@@ -202,23 +218,28 @@ module FSM(Clk, w, cal, g, met, St, Re, Sk, Bu, Cn, Ti, WCn);
     always @(*) begin
         nexBu = 2'b00;
         nexCn = Cn;
-        nexTi = Ti;
         nexWCn = WCn;
+		nexTi = Ti;
         nxt = cur;
         case (cur)
             Start: begin
                 if (St) begin
                     nexCn = 9'd1;
                     nexTi = 6'd45;
+                    nexWCn = 4'd0;
                     nxt = Workout;
-                end
+                end else begin
+					nexCn = T;
+				    nexTi = 6'd0;
+                    nexWCn = 4'd10;
+				end
             end
             Workout: begin
                 if (Sk) begin
                     if (Cn == T) begin
                         nexBu = 2'b11;
                         nexTi = 6'd0;
-                        nexWCn = 3'd0;
+                        nexWCn = 4'd10;
                         nxt = Start;
                     end else begin
                         nexBu = 2'b10;
@@ -227,17 +248,18 @@ module FSM(Clk, w, cal, g, met, St, Re, Sk, Bu, Cn, Ti, WCn);
                         nexWCn = (WCn == 4'd9) ? 4'd0 : WCn + 1;
                     end
                 end else if (Ti == 0) begin
+					nexBu = 2'b01;
                     nexTi = 6'd15;
                     nxt = Rest;
                 end else
-                    nexTi = Ti-1;
+					nexTi = Ti-1;
             end
             Rest: begin
                 if (Sk) begin
                     if (Cn == T) begin
                         nexBu = 2'b11;
                         nexTi = 6'd0;
-                        nexWCn = 3'd0;
+                        nexWCn = 4'd10;
                         nxt = Start;
                     end else begin
                         nexBu = 2'b10;
@@ -250,17 +272,17 @@ module FSM(Clk, w, cal, g, met, St, Re, Sk, Bu, Cn, Ti, WCn);
                     if (Cn == T) begin
                         nexBu = 2'b11;
                         nexTi = 6'd0;
-                        nexWCn = 3'd0;
+                        nexWCn = 4'd10;
                         nxt = Start;
                     end else begin
                         nexBu = 2'b01;
                         nexCn = Cn+1;
                         nexTi = 6'd45;
-                        nnexWCn = (WCn == 4'd9) ? 4'd0 : WCn + 1;
+                        nexWCn = (WCn == 4'd9) ? 4'd0 : WCn + 1;
                         nxt = Workout;
                     end
                 end else
-                    nexTi = Ti-1;
+					nexTi = Ti-1;
             end
         endcase
     end
@@ -268,6 +290,29 @@ module FSM(Clk, w, cal, g, met, St, Re, Sk, Bu, Cn, Ti, WCn);
 endmodule
 
 //// //// //// ////
+
+module bcdConvertor( 
+	input [6:0] temp,
+	output reg [3:0] bcd_tens,
+	output reg [3:0] bcd_ones
+);
+	reg [3:0] count;
+	reg [6:0] tempCopy;
+	
+	always @(temp) begin 
+		tempCopy = temp;
+		bcd_tens = 0;
+		bcd_ones = 0;
+		
+		for(count = 0; count < 10; count = count+1) begin 
+			if (tempCopy >= 10) begin
+				tempCopy = tempCopy - 10;
+				bcd_tens = bcd_tens +1;
+			end
+		end
+		bcd_ones = tempCopy;
+	end
+endmodule
 
 module SevenSeg(Clk, Cn, Ti, seg_data, seg_sel);
     input Clk;
@@ -279,15 +324,14 @@ module SevenSeg(Clk, Cn, Ti, seg_data, seg_sel);
     reg [3:0] digit;
     wire [3:0] digits[3:0];
 
-    assign digits[0] = Ti % 10;
-    assign digits[1] = Ti / 10;
-    assign digits[2] = Cn % 10;
-    assign digits[3] = Cn / 10;
+	bcdConvertor
+		bcd1(Ti,digits[1],digits[0]),
+		bcd2(Cn,digits[3],digits[2]);
 
     always @(posedge Clk)
         digSel <= (digSel + 1)%4;
 
-    always @(*) begin
+    always @(Cn or Ti or digSel or digit) begin
         case (digSel)
             2'd0: begin
                 seg_sel = 5'b00001;
@@ -308,16 +352,16 @@ module SevenSeg(Clk, Cn, Ti, seg_data, seg_sel);
         endcase
 
         case (digit)
-            4'd0: seg_data = 8'b01111110;
-            4'd1: seg_data = 8'b00110000;
-            4'd2: seg_data = 8'b01101101;
-            4'd3: seg_data = 8'b01111001;
-            4'd4: seg_data = 8'b00110011;
-            4'd5: seg_data = 8'b01011011;
-            4'd6: seg_data = 8'b01011111;
-            4'd7: seg_data = 8'b01110000;
+            4'd0: seg_data = 8'b00111111;
+            4'd1: seg_data = 8'b00000110;
+            4'd2: seg_data = 8'b01011011;
+            4'd3: seg_data = 8'b01001111;
+            4'd4: seg_data = 8'b01100110;
+            4'd5: seg_data = 8'b01101101;
+            4'd6: seg_data = 8'b01111101;
+            4'd7: seg_data = 8'b00000111;
             4'd8: seg_data = 8'b01111111;
-            4'd9: seg_data = 8'b11111011;
+            4'd9: seg_data = 8'b01101111;
         endcase
     end
 
@@ -325,191 +369,423 @@ endmodule
 
 //// //// //// ////
 
-module LcdController(clk, data_in, rs, send, busy, lcd_rs, lcd_e, lcd_data);
-    input clk;
-    input reset;
-    input [7:0] data_in;
-    input rs;
-    input send;
+module bcdConv2(
+    input [9:0] temp,
+    output reg [3:0] bcd_hundreds, bcd_tens, bcd_ones  
+);
+    reg [6:0] count;
+    reg [9:0] tempCopy;
 
-    output reg busy;
-    output reg lcd_rs;
-    output reg lcd_e;
-    output reg [3:0] lcd_data;
 
-    reg rs_buf;
-    reg [3:0] state;
-    reg [7:0] data_buf;
+    always @(temp) begin
+        tempCopy = temp;
+        bcd_hundreds = 0;
+        bcd_tens = 0;
+        bcd_ones = 0;
 
-    always @(posedge clk or posedge reset) begin
-        case (state)
-            0: begin
-                if (send) begin
-                    busy <= 1;
-                    data_buf <= data_in;
-                    rs_buf <= rs;
-                    state <= 1;
-                end
+        for(count = 0; count < 10; count = count + 1) begin
+            if (tempCopy >= 100) begin
+                tempCopy = tempCopy - 100;
+                bcd_hundreds = bcd_hundreds + 1;
             end
-            1: begin
-                lcd_rs <= rs_buf;
-                lcd_data <= data_buf[7:4];
-                lcd_e <= 1;
-                state <= 2;
-            end
-            2: begin
-                lcd_e <= 0;
-                state <= 3;
-            end
-            3: begin
-                lcd_data <= data_buf[3:0];
-                lcd_e <= 1;
-                state <= 4;
-            end
-            4: begin
-                lcd_e <= 0;
-                busy <= 0;
-                state <= 0;
-            end
-        endcase
-    end
-endmodule
-
-module LcdDisplay(clkLcd, Cn, Ti, WCn, lcd_rs, lcd_e, lcd_data);
-    input clkLcd;
-    input [8:0]  Cn;
-    input [5:0]  Ti;
-    input [3:0]  WCn;
-
-    output lcd_rs;
-    output lcd_e;
-    output [3:0] lcd_data;
-
-    reg [127:0] exercise_text [0:9];
-    reg [127:0] default_text;
-    initial begin
-        exercise_text[0] = "Lunges,right leg";
-        exercise_text[1] = "Lunges,left leg ";
-        exercise_text[2] = "    Push-Ups    ";
-        exercise_text[3] = "   SquatJumps   ";
-        exercise_text[4] = "   TricepDips   ";
-        exercise_text[5] = "MountainClimbers";
-        exercise_text[6] = "  Plank Ladder  ";
-        exercise_text[7] = "  WallSit Hold  ";
-        exercise_text[8] = "   Plank Hold   ";
-        exercise_text[9] = "     Burpees    ";
-        default_text     = "----------------";
-    end
-
-    reg [7:0] top_line    [0:15];
-    reg [7:0] bottom_line [0:15];
-    integer i;
-
-    function [23:0] bin_to_ascii3;
-        input [9:0] value;
-        reg [3:0] hundreds, tens, ones;
-        begin
-            hundreds = value / 100;
-            tens     = (value % 100) / 10;
-            ones     = value % 10;
-            bin_to_ascii3 = { (hundreds ? (hundreds+8'd48) : 8'd32),
-                              ((hundreds || tens) ? (tens+8'd48) : 8'd32),
-                              (ones+8'd48) };
         end
-    endfunction
 
-    task update_lines;
-        reg [23:0] cn_ascii;
-        reg [15:0] ti_ascii;
-        reg [127:0] txt;
-        begin
-            cn_ascii = bin_to_ascii3(Cn);
-            ti_ascii = {8'd32, (Ti/10 + 8'd48), (Ti%10 + 8'd48)};
-
-            for (i=0; i<16; i=i+1) begin
-                top_line[i]    = " ";
-                bottom_line[i] = " ";
+        for(count = 0; count < 10; count = count + 1) begin
+            if (tempCopy >= 10) begin
+                tempCopy = tempCopy - 10;
+                bcd_tens = bcd_tens + 1;
             end
-
-            // Top line: "Cn: xxx / Ti: yy"
-            top_line[0]  = "C"; top_line[1]  = "n"; top_line[2]  = ":";
-            top_line[4]  = cn_ascii[23:16];
-            top_line[5]  = cn_ascii[15:8];
-            top_line[6]  = cn_ascii[7:0];
-            top_line[8]  = "/";
-            top_line[10] = "T"; top_line[11] = "i"; top_line[12] = ":";
-            top_line[14] = ti_ascii[7:0];
-            top_line[15] = ti_ascii[15:8];
-
-            if (WCn < 10)
-                txt = exercise_text[WCn];
-            else
-                txt = default_text;
-
-            for (i=0; i<16; i=i+1)
-                bottom_line[i] = txt[127 - i*8 -: 8];
         end
-    endtask
 
-    wire busy;
-    reg  send;
-    reg  rs;
-    reg  [7:0] data_in;
-    reg  [5:0] pos;
-    reg  [1:0] row;
+        bcd_ones = tempCopy;
 
-    LcdController lcd_core(clkLcd, data_in, rs, send, busy, lcd_rs, lcd_e, lcd_data);
-
-    always @(posedge clkLcd or posedge reset) begin
-        if (!busy) begin
-            if (pos == 0) begin
-                rs <= 0;
-                data_in <= (row == 0) ? 8'h80 : 8'hC0;
-                send <= 1;
-                pos <= pos + 1;
-            end else if (pos <= 16) begin
-                rs <= 1;
-                data_in <= (row == 0) ? top_line[pos-1] : bottom_line[pos-1];
-                send <= 1;
-                pos <= pos + 1;
-            end else begin
-                pos <= 0;
-                row <= row ^ 1;
-                update_lines();
-            end
-        end else begin
-            send <= 0;
-        end
     end
 endmodule
 
 //// ///// //// ////
 
-module FRHealth(Clk, w, cal, g, met, St, Re, Sk, seg_data, seg_sel, BuFreq, LCD_RS, LCD_E, LCD_DATA);
-    input Clk, g, St, Re, Sk;
+module mainLcd (WCn, Cn, Ti, clk, reset, Rs, Rw, E, Data);
+	input clk, reset;
+	input [9:0] Cn,Ti;
+	input [3:0] WCn;
+	
+	output reg Rs,Rw,E;
+	output reg [7:0] Data;
+	
+	localparam FUNC_SET = 8'h38;
+	localparam DISPLAY_ON = 8'h0C;
+	localparam CLEAR = 8'h01;
+	localparam ENTRY_MODE = 8'h06;
+	localparam SET_ROW1 = 8'h80;
+	localparam SET_ROW2 = 8'h80 + 8'h40;
+	localparam SET_FIRST_LETTER = 8'h80;
+		
+	reg [7:0] firstLine [15:0];
+	reg [7:0] secondLine [15:0];
+	reg [7:0] sports_names [0:10][0:15];
+
+	initial begin
+        // Cn: xxx / Ti: yy
+        firstLine[0] = "C"; 
+        firstLine[1] = "n";
+        firstLine[2] = ":";
+        firstLine[3] = " ";
+        firstLine[4] = "x"; 
+        firstLine[5] = "x";
+        firstLine[6] = "x";
+        firstLine[7] = " ";
+        firstLine[8] = "/";
+        firstLine[9] = " ";
+        firstLine[10] = "T";
+        firstLine[11] = "i";
+        firstLine[12] = ":";
+        firstLine[13] = " ";
+        firstLine[14] = "y";
+        firstLine[15] = "y";
+
+        // 0 - "Lunges,right leg"
+        sports_names[0][0]  = "L";
+        sports_names[0][1]  = "u";
+        sports_names[0][2]  = "n";
+        sports_names[0][3]  = "g";
+        sports_names[0][4]  = "e";
+        sports_names[0][5]  = "s";
+        sports_names[0][6]  = ",";
+        sports_names[0][7]  = "r";
+        sports_names[0][8]  = "i";
+        sports_names[0][9]  = "g";
+        sports_names[0][10] = "h";
+        sports_names[0][11] = "t";
+        sports_names[0][12] = " ";
+        sports_names[0][13] = "l";
+        sports_names[0][14] = "e";
+        sports_names[0][15] = "g";
+
+        // 1 - "Lunges,left  leg"
+        sports_names[1][0]  = "L";
+        sports_names[1][1]  = "u";
+        sports_names[1][2]  = "n";
+        sports_names[1][3]  = "g";
+        sports_names[1][4]  = "e";
+        sports_names[1][5]  = "s";
+        sports_names[1][6]  = ",";
+        sports_names[1][7]  = "l";
+        sports_names[1][8]  = "e";
+        sports_names[1][9]  = "f";
+        sports_names[1][10] = "t";
+        sports_names[1][11] = " ";
+        sports_names[1][12] = " ";
+        sports_names[1][13] = "l";
+        sports_names[1][14] = "e";
+        sports_names[1][15] = "g";
+
+        // 2 - "    Push-Ups    "
+        sports_names[2][0]  = " ";
+        sports_names[2][1]  = " ";
+        sports_names[2][2]  = " ";
+        sports_names[2][3]  = " ";
+        sports_names[2][4]  = "P";
+        sports_names[2][5]  = "u";
+        sports_names[2][6]  = "s";
+        sports_names[2][7]  = "h";
+        sports_names[2][8]  = "-";
+        sports_names[2][9]  = "U";
+        sports_names[2][10] = "p";
+        sports_names[2][11] = "s";
+        sports_names[2][12] = " ";
+        sports_names[2][13] = " ";
+        sports_names[2][14] = " ";
+        sports_names[2][15] = " ";
+
+        // 3 - "Squat      Jumps"
+        sports_names[3][0]  = "S";
+        sports_names[3][1]  = "q";
+        sports_names[3][2]  = "u";
+        sports_names[3][3]  = "a";
+        sports_names[3][4]  = "t";
+        sports_names[3][5]  = " ";
+        sports_names[3][6]  = " ";
+        sports_names[3][7]  = " ";
+        sports_names[3][8]  = " ";
+        sports_names[3][9]  = " ";
+        sports_names[3][10] = " ";
+        sports_names[3][11] = "J";
+        sports_names[3][12] = "u";
+        sports_names[3][13] = "m";
+        sports_names[3][14] = "p";
+        sports_names[3][15] = "s";
+
+        // 4 - "Tricep      Dips"
+        sports_names[4][0]  = "T";
+        sports_names[4][1]  = "r";
+        sports_names[4][2]  = "i";
+        sports_names[4][3]  = "c";
+        sports_names[4][4]  = "e";
+        sports_names[4][5]  = "p";
+        sports_names[4][6]  = " ";
+        sports_names[4][7]  = " ";
+        sports_names[4][8]  = " ";
+        sports_names[4][9]  = " ";
+        sports_names[4][10] = " ";
+        sports_names[4][11] = " ";
+        sports_names[4][12] = "D";
+        sports_names[4][13] = "i";
+        sports_names[4][14] = "p";
+        sports_names[4][15] = "s";
+
+        // 5 - "MountainClimbers"
+        sports_names[5][0]  = "M";
+        sports_names[5][1]  = "o";
+        sports_names[5][2]  = "u";
+        sports_names[5][3]  = "n";
+        sports_names[5][4]  = "t";
+        sports_names[5][5]  = "a";
+        sports_names[5][6]  = "i";
+        sports_names[5][7]  = "n";
+        sports_names[5][8]  = "C";
+        sports_names[5][9]  = "l";
+        sports_names[5][10] = "i";
+        sports_names[5][11] = "m";
+        sports_names[5][12] = "b";
+        sports_names[5][13] = "e";
+        sports_names[5][14] = "r";
+        sports_names[5][15] = "s";
+
+        // 6 - "Plank     Ladder"
+        sports_names[6][0]  = "P";
+        sports_names[6][1]  = "l";
+        sports_names[6][2]  = "a";
+        sports_names[6][3]  = "n";
+        sports_names[6][4]  = "k";
+        sports_names[6][5]  = " ";
+        sports_names[6][6]  = " ";
+        sports_names[6][7]  = " ";
+        sports_names[6][8]  = " ";
+        sports_names[6][9]  = " ";
+        sports_names[6][10] = "L";
+        sports_names[6][11] = "a";
+        sports_names[6][12] = "d";
+        sports_names[6][13] = "d";
+        sports_names[6][14] = "e";
+        sports_names[6][15] = "r";
+
+        // 7 - "Wall   Sit  Hold"
+        sports_names[7][0]  = "W";
+        sports_names[7][1]  = "a";
+        sports_names[7][2]  = "l";
+        sports_names[7][3]  = "l";
+        sports_names[7][4]  = " ";
+        sports_names[7][5]  = " ";
+        sports_names[7][6]  = " ";
+        sports_names[7][7]  = "S";
+        sports_names[7][8]  = "i";
+        sports_names[7][9]  = "t";
+        sports_names[7][10] = " ";
+        sports_names[7][11] = " ";
+        sports_names[7][12] = "H";
+        sports_names[7][13] = "o";
+        sports_names[7][14] = "l";
+        sports_names[7][15] = "d";
+
+        // 8 - "Plank       Hold"
+        sports_names[8][0]  = "P";
+        sports_names[8][1]  = "l";
+        sports_names[8][2]  = "a";
+        sports_names[8][3]  = "n";
+        sports_names[8][4]  = "k";
+        sports_names[8][5]  = " ";
+        sports_names[8][6]  = " ";
+        sports_names[8][7]  = " ";
+        sports_names[8][8]  = " ";
+        sports_names[8][9]  = " ";
+        sports_names[8][10] = " ";
+        sports_names[8][11] = " ";
+        sports_names[8][12] = "H";
+        sports_names[8][13] = "o";
+        sports_names[8][14] = "l";
+        sports_names[8][15] = "d";
+
+        // 9 - "    Burpees     "
+        sports_names[9][0]  = " ";
+        sports_names[9][1]  = " ";
+        sports_names[9][2]  = " ";
+        sports_names[9][3]  = " ";
+        sports_names[9][4]  = "B";
+        sports_names[9][5]  = "u";
+        sports_names[9][6]  = "r";
+        sports_names[9][7]  = "p";
+        sports_names[9][8]  = "e";
+        sports_names[9][9]  = "e";
+        sports_names[9][10] = "s";
+        sports_names[9][11] = " ";
+        sports_names[9][12] = " ";
+        sports_names[9][13] = " ";
+        sports_names[9][14] = " ";
+        sports_names[9][15] = " ";
+
+        // 10 - "----------------"
+        sports_names[10][0]  = "-";
+        sports_names[10][1]  = "-";
+        sports_names[10][2]  = "-";
+        sports_names[10][3]  = "-";
+        sports_names[10][4]  = "-";
+        sports_names[10][5]  = "-";
+        sports_names[10][6]  = "-";
+        sports_names[10][7]  = "-";
+        sports_names[10][8]  = "-";
+        sports_names[10][9]  = "-";
+        sports_names[10][10] = "-";
+        sports_names[10][11] = "-";
+        sports_names[10][12] = "-";
+        sports_names[10][13] = "-";
+        sports_names[10][14] = "-";
+        sports_names[10][15] = "-";
+
+	end
+	
+	wire [3:0] Tihundreds, Titens, Tiones;
+	wire [3:0] Cnhundreds, Cntens, Cnones;
+	
+	bcdConv2 bcd1(Cn, Cnhundreds, Cntens, Cnones);
+	bcdConv2 bcd2(Ti, Tihundreds, Titens, Tiones);
+	
+	integer i;
+	
+	always @(clk) 
+		begin 
+			for (i = 0; i < 16; i = i+1)
+				secondLine[i] = sports_names[WCn][i];
+
+			firstLine[4] = 8'h30 + Cnhundreds;
+			firstLine[5] = 8'h30 + Cntens;
+			firstLine[6] = 8'h30 + Cnones;
+			firstLine[14] = 8'h30 + Titens;
+			firstLine[15] = 8'h30 + Tiones;
+		end
+		
+		
+	reg [5:0] state = 0;
+	reg [5:0] helperState = 0;
+	reg [5:0] id = 0;
+	
+	reg [15:0] delay_cnt = 0;
+	reg wait_flag = 0;
+	
+	always @(posedge clk)
+		begin 
+			case (state)
+				0: begin Data <= FUNC_SET; E <=1; Rs<=0; state<=20; helperState <= 0; end
+				1: begin Data <= DISPLAY_ON; E <=1; Rs<=0; state<=20; helperState <= 1; end
+				2: begin Data <= CLEAR; Rs<=0; E <=1; state<=20; helperState <= 2; end
+				3: begin Data <= ENTRY_MODE; E <=1; Rs<=0; state<=20; helperState <= 3; end
+				4: begin Data <= SET_ROW1; E <=1; Rs<=0 ; state<=20; helperState <= 4; end
+				5: begin Data <= firstLine[id]; E <=1; Rs<=1; delay_cnt<=0; wait_flag<=1; state<=30; end
+				6:
+				begin 
+					if (id < 15) begin
+						id = id + 1;
+						state <= 5;
+						helperState <= 4;
+					end else begin
+						id = 0;
+						state <= 7;
+						helperState <= 6;
+					end
+				end
+				7: begin Data <= SET_ROW2; E <=1; Rs<=0; state<=20; helperState <= 7; end
+				8: begin Data <= secondLine[id]; E <=1; Rs<=1; delay_cnt<=0; wait_flag<=1; state<=31; end
+				9:
+				begin
+					if (id < 15) begin 
+						id = id + 1;
+						state <= 8;
+						helperState <= 7;
+					end else begin
+						id = 0;
+						state <=10;
+						helperState <= 9;
+					end
+				end
+
+				10:
+				begin 
+					Data <= SET_FIRST_LETTER; 
+					Rs<=0; 
+					E<=1; 
+					state<=20; 
+					helperState<=4;
+				end
+				
+				20:
+				begin
+					case (helperState)
+						0: begin state<=1; E<=0; end
+						1: begin state<=2; E<=0; end
+						2: begin state<=3; E<=0; end
+						3: begin state<=4; E<=0; end
+						4: begin state<=5; E<=0; end
+						5: begin state<=6; E<=0; end
+						6: begin state<=7; E<=0; end
+						7: begin state<=8; E<=0; end
+						8: begin state<=9; E<=0; end
+						9: begin state<=10; E<=0; end
+					endcase
+				end
+				
+				30:
+				begin
+					E<=0;
+					delay_cnt <= delay_cnt + 1;
+					if (delay_cnt > 20) begin
+						delay_cnt <= 0;
+						wait_flag <= 0;
+						state <= 6;
+					end
+				
+				end
+				31:
+				begin
+					E<=0;
+					delay_cnt <= delay_cnt + 1;
+					if (delay_cnt > 20) begin
+						delay_cnt <= 0;
+						wait_flag <= 0;
+						state <= 9;
+					end
+				end
+			endcase
+		end
+endmodule
+
+//// //// //// ////
+
+module FRHealth(Clk, w, cal, g, met, inSt, inRe, inSk, seg_data, seg_sel, BuFreq, lcd_Data, lcd_Rs, lcd_Rw, lcd_E, lcd_reset);
+    input Clk, g, inSt, inRe, inSk;
     input [2:0] w;
     input [1:0] cal, met;
-    output [7:0] seg_data;
+    output [7:0] seg_data , lcd_Data;
     output [4:0] seg_sel;
-    output BuFreq;
-    output LCD_RS, LCD_E;
-    output [3:0] LCD_DATA;
+    output BuFreq, lcd_E, lcd_Rw, lcd_Rs, lcd_reset;
+  
+	wire St , Re , Sk;
+	assign St = ~inSt , Re = ~inRe , Sk = ~inSk;
 
-    reg [1:0] Bu;
-    reg [8:0] Cn;
-    reg [5:0] Ti;
-    reg [3:0] WCn;
+    wire [1:0] Bu;
+    wire [8:0] Cn;
+    wire [5:0] Ti;
+    wire [3:0] WCn;
     wire StDeb, ReDeb, SkDeb;
     wire ClkFsm, Clk7seg, ClkDeb, ClkLcd, beep500, beep1k, beep2k;
 
     Debouncer deb1(ClkDeb, St, StDeb),
               deb2(ClkDeb, Re, ReDeb),
               deb3(ClkDeb, Sk, SkDeb);
+	
 
     FreqDiv freqDiv(Clk, ClkFsm, Clk7seg, ClkDeb, ClkLcd, beep500, beep1k, beep2k);
-    FSM fsm(ClkFsm, w, cal, g, met, StDeb, ReDeb, SkDeb, Bu, Cn, Ti, WCn);
+    FSM fsm(ClkFsm, ClkDeb, w, cal, g, met, StDeb, ReDeb, SkDeb, Bu, Cn, Ti, WCn);
     SevenSeg sevenSeg(Clk7seg, Cn[6:0], {1'b0,Ti}, seg_data, seg_sel);
-    LcdDisplay lcdDisp(ClkLcd, Cn, Ti, WCn, LCD_RS, LCD_E, LCD_DATA);
+	mainLcd lcd(WCn, Cn, Ti, ClkLcd, lcd_reset, lcd_Rs, lcd_Rw, lcd_E, lcd_Data);
 
     assign BuFreq = (Bu == 2'b00) ? 0 :
                     (Bu == 2'b01) ? beep1k :
