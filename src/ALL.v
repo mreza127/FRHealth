@@ -767,7 +767,7 @@ module FRHealth(Clk, w, cal, g, met, inSt, inRe, inSk, seg_data, seg_sel, BuFreq
     output [4:0] seg_sel;
     output BuFreq, lcd_E, lcd_Rw, lcd_Rs, lcd_reset;
   
-	wire St , Re , Sk;
+	wire St, Re, Sk;
 	assign St = ~inSt , Re = ~inRe , Sk = ~inSk;
 
     wire [1:0] Bu;
