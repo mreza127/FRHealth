@@ -1,11 +1,16 @@
-module FreqDiv(input Clk, output ClkFsm, output Clk7seg, output ClkDeb, output ClkLcd, output beep500, output beep1k, output Beep2k);
+module FreqDiv(Clk, ClkFsm, Clk7seg, ClkDeb, ClkLcd, beep500, beep1k, beep2k);
 
-    reg [22:0] cntDeb = 0;
+    input Clk;
+	output reg ClkFsm, Clk7seg, ClkDeb, ClkLcd, beep500, beep1k, beep2k;
+	 
+	 
+	 
+	reg [22:0] cntDeb = 0;
     reg [25:0] cntFsm = 0;
-    reg [15:0] cnt7seg = 0, cntLcd = 0, cnt500 = 0, cnt1k = 0, cnt2k = 0;
+    reg [31:0] cnt7seg = 0, cntLcd = 0, cnt500 = 0, cnt1k = 0, cnt2k = 0;
 
     always @(posedge Clk) begin
-        cntFsm <= cnt1Hz + 1;
+        cntFsm <= cntFsm + 1;
         if (cntFsm == 20_000_000) begin
             ClkFsm <= ~ClkFsm;
             cntFsm <= 0;
@@ -18,13 +23,13 @@ module FreqDiv(input Clk, output ClkFsm, output Clk7seg, output ClkDeb, output C
         end
 
         cntDeb <= cntDeb + 1;
-        if (cntDeb == 400_000) begin
+        if (cntDeb == 40_000) begin
             ClkDeb <= ~ClkDeb;
             cntDeb <= 0;
         end
 
         cntLcd <= cntLcd + 1;
-        if (cntLcd == 20_000) begin
+        if (cntLcd == 25_000) begin
             ClkLcd <= ~ClkLcd;
             cntLcd <= 0;
         end
